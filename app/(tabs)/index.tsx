@@ -1,141 +1,357 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { Picker } from '@react-native-picker/picker';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
-  Alert,
-  DeviceEventEmitter,
-  ScrollView,
+  Dimensions,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-// import QRCode from 'react-native-qrcode-svg';
+import {
+  BLEPrinter,
+  ColumnAlignment,
+  COMMANDS,
+} from 'react-native-thermal-receipt-printer-image-qr';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Loading } from '@/components/Loading';
 // @ts-ignore
-import SunmiV2Printer from 'react-native-sunmi-v2-printer';
-// @ts-ignore
-import { SunmiScannerView } from 'react-native-sunmi-inner-scanner';
+import EscPosEncoder from 'esc-pos-encoder';
+import { useConnectPrinter, useGetListDevices } from '@/hooks';
+import ImgToBase64 from 'react-native-image-base64';
 
-const SunmiScreen = () => {
-  const [status, setStatus] = useState('');
-  let QrRef: React.MutableRefObject<null> = useRef(null);
+const deviceWidth = Dimensions.get('window').width;
+
+const HomeScreen = () => {
+  const router = useRouter();
+  const params = useLocalSearchParams();
+  const {
+    getListDevices,
+    loading,
+    setLoading,
+    selectedValue,
+    setSelectedValue,
+    devices,
+    printerList,
+    setSelectedNetPrinter,
+    selectedNetPrinter,
+    selectedPrinter,
+    setSelectedPrinter,
+  } = useGetListDevices();
+
+  const { connect } = useConnectPrinter();
+
+  const QrRef = useRef<any>(null);
 
   useEffect(() => {
-    let listener: any;
-
-    try {
-      listener = DeviceEventEmitter.addListener('PrinterStatus', action => {
-        switch (action) {
-          case SunmiV2Printer.Constants.NORMAL_ACTION:
-            setStatus('printer normal');
-            break;
-          case SunmiV2Printer.Constants.OUT_OF_PAPER_ACTION:
-            setStatus('printer out out page');
-            break;
-          case SunmiV2Printer.Constants.COVER_OPEN_ACTION:
-            setStatus('printer cover open');
-            break;
-          default:
-            setStatus('printer status:' + action);
-        }
+    if (params?.printer) {
+      const printer = JSON.parse(params.printer as string);
+      setSelectedNetPrinter({
+        ...selectedNetPrinter,
+        ...printer,
       });
-    } catch (e) {
-      setStatus(e as string);
-      console.log(e);
     }
+  }, [params?.printer]);
 
-    return () => {
-      if (listener) {
-        listener.remove();
-      }
-    };
-  }, []);
+  useEffect(() => {
+    // setLoading(true);
+    getListDevices();
+  }, [getListDevices]);
 
-  const print = () => {
-    let qr = '';
-    const getDataURL = () => {
-      // QrRef?.toDataURL(callback);
-    };
+  const handleConnectSelectedPrinter = useCallback(async () => {
+    setLoading(true);
+    await connect();
+  }, [connect, setLoading]);
 
-    const callback = async (dataURL: string) => {
-      setStatus(dataURL);
-      qr = dataURL;
-      let logo = `/${qr}`;
-      let logobase64 = logo.replace('data:image/jpeg;base64,', '');
-      let orderList = [
-        ['2020-11-25 15:00:00', '', ''],
-        ['Some item x 1', '', ''],
-        ['', '', '$100'],
-        ['2020-11-25 15:00:00', '', ''],
-        ['Some item x 1', '', ''],
-        ['', '', '$100'],
-      ];
-      let columnAlignment = [0, 1, 2];
-      let columnWidth = [25, 1, 5];
-      try {
-        //set aligment: 0-left,1-center,2-right
-        await SunmiV2Printer.setAlignment(1);
-
-        //图片bitmap对象(最大宽度384像素，超过无法打印并且回调callback异常函数)
-        await SunmiV2Printer.printBitmap(qr, 384 /*width*/, 380 /*height*/);
-        //SunmiV2Printer.commitPrinterBuffer();
-        await SunmiV2Printer.printOriginalText('\n\n');
-        await SunmiV2Printer.setFontSize(40);
-        await SunmiV2Printer.printOriginalText('Title name\n');
-        await SunmiV2Printer.setFontSize(50);
-        await SunmiV2Printer.printOriginalText('Subtitle name\n');
-        await SunmiV2Printer.setFontSize(20);
-        await SunmiV2Printer.setAlignment(0);
-        await SunmiV2Printer.printOriginalText('Receipt ID: 1234567890\n');
-        await SunmiV2Printer.printOriginalText('Date: 2020-11-25 15:00:00\n');
-        await SunmiV2Printer.printOriginalText(
-          '===============================\n',
-        );
-        await SunmiV2Printer.printOriginalText('\n\n');
-      } catch (e) {
-        console.log(e);
-      }
-    };
-    getDataURL();
+  const handlePrint = async () => {
+    try {
+      // const Printer = printerList[selectedValue];
+      BLEPrinter.printText('<C>sample text</C>', {
+        cut: false,
+      });
+      BLEPrinter.printImage(
+        'https://media-cdn.tripadvisor.com/media/photo-m/1280/1b/3a/bd/b5/the-food-bill.jpg',
+        {
+          imageWidth: 590,
+        },
+      );
+      BLEPrinter.printBill('<C>sample text</C>', { beep: false });
+    } catch (err) {
+      console.warn(err);
+    }
   };
 
-  return (
-    <ScrollView
-      style={{
-        flex: 1,
-      }}>
-      <View style={styles.container}>
-        <Text>{`Printer Status: ${status}`}</Text>
-        <TouchableOpacity style={styles.button} onPress={() => print()}>
-          <Text style={styles.buttonText}>Print</Text>
-        </TouchableOpacity>
-        {/*<QRCode value="hey" getRef={(el: React.ReactElement) => (QrRef = el)} />*/}
-      </View>
+  const handlePrintBill = async () => {
+    let address = '13 Phạm Hùng, nam từ Liêm';
+    const BOLD_ON = COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
+    const BOLD_OFF = COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
+    const CENTER = COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
+    const OFF_CENTER = COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
+    try {
+      BLEPrinter.printText(`${CENTER}${BOLD_ON} BILLING ${BOLD_OFF}\n`);
+      BLEPrinter.printText(`${CENTER}${address}${OFF_CENTER}`);
+      BLEPrinter.printText('090 3399 031 555\n');
+      BLEPrinter.printText('Date : 15- 09 - 2021 /15 : 29 : 57 / Admin');
+      BLEPrinter.printText('Product : Total - 4 / No. (1,2,3,4)\n');
+      BLEPrinter.printText(
+        `${CENTER}${COMMANDS.HORIZONTAL_LINE.HR_80MM}${CENTER}`,
+      );
+      let orderList = [
+        ['1. Skirt Palas Labuh Muslimah Fashion', 'x2', '500$'],
+        ['2. BLOUSE ROPOL VIRAL MUSLIMAH FASHION', 'x4222', '500$'],
+        [
+          '3. Women Crew Neck Button Down Ruffle Collar Loose Blouse',
+          'x1',
+          '30000000000000$',
+        ],
+        ['4. Retro Buttons Up Full Sleeve Loose', 'x10', '200$'],
+        ['5. Retro Buttons Up', 'x10', '200$'],
+      ];
+      let columnAlignment = [
+        ColumnAlignment.LEFT,
+        ColumnAlignment.CENTER,
+        ColumnAlignment.RIGHT,
+      ];
+      let columnWidth = [46 - (7 + 12), 7, 12];
+      const header = ['Product list', 'Qty', 'Price'];
+      BLEPrinter.printColumnsText(header, columnWidth, columnAlignment, [
+        `${BOLD_ON}`,
+        '',
+        '',
+      ]);
+      BLEPrinter.printText(
+        `${CENTER}${COMMANDS.HORIZONTAL_LINE.HR3_80MM}${CENTER}`,
+      );
+      for (let i in orderList) {
+        BLEPrinter.printColumnsText(
+          orderList[i],
+          columnWidth,
+          columnAlignment,
+          [`${BOLD_OFF}`, '', ''],
+        );
+      }
+      BLEPrinter.printText('\n');
 
-      <SunmiScannerView
-        style={{ height: 400, width: 300 }}
-        onCodeScan={(data: any) => {
-          Alert.alert(JSON.stringify(data));
+      BLEPrinter.printBill(`${CENTER}Thank you\n`, { beep: false });
+    } catch (err) {
+      console.warn(err);
+    }
+  };
+
+  const printBuild = useCallback(async () => {
+    let address = '2700 S123 Grand Ave, Los Angeles, CA 90007223, USA.';
+    const BOLD_ON = COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
+    const BOLD_OFF = COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
+    const CENTER = COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
+    const OFF_CENTER = COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
+    const data = await ImgToBase64.getBase64String(
+      'https://media-cdn.tripadvisor.com/media/photo-m/1280/1b/3a/bd/b5/the-food-bill.jpg',
+    );
+    console.log('ImgToBase64', data);
+    try {
+      await BLEPrinter.printImageBase64(data, {
+        imageWidth: 589,
+      });
+    } catch (error) {
+      console.log('error', error);
+    }
+  }, []);
+
+  const handlePrintBillWithImage = async () => {
+    BLEPrinter.printImage(require('@/assets/Order.png'), {
+      imageWidth: 575,
+    });
+    // BLEPrinter.printBill('', {beep: false});
+  };
+
+  const findPrinter = () => {
+    router.push('/find');
+  };
+
+  const goToSunmi = () => {
+    router.push('/sunmi');
+  };
+
+  const onChangeText = (text: string) => {
+    setSelectedNetPrinter({ ...selectedNetPrinter, host: text });
+  };
+
+  const _renderNet = () => (
+    <>
+      <Text style={[styles.text, { color: 'black', marginLeft: 0 }]}>
+        Your printer ip....
+      </Text>
+      <TextInput
+        style={{
+          borderBottomWidth: 1,
+          height: 45,
         }}
+        placeholder={'Your printer port...'}
+        value={selectedNetPrinter?.host}
+        onChangeText={onChangeText}
       />
-    </ScrollView>
+      <View
+        style={{
+          marginTop: 10,
+        }}>
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: 'grey', height: 30 }]}
+          // disabled={!selectedPrinter?.device_name}
+          onPress={findPrinter}>
+          {/*<AntIcon name={'search1'} color={'white'} size={18} />*/}
+          <Text style={styles.text}>Find your printers</Text>
+        </TouchableOpacity>
+      </View>
+    </>
+  );
+
+  const _renderOther = () => (
+    <>
+      <Text>Select printer: </Text>
+      <Picker
+        selectedValue={selectedPrinter}
+        onValueChange={setSelectedPrinter}>
+        {devices !== undefined &&
+          devices?.length > 0 &&
+          devices?.map((item: any, index) => (
+            <Picker.Item
+              label={item.device_name}
+              value={item}
+              key={`printer-item-${index}`}
+            />
+          ))}
+      </Picker>
+    </>
+  );
+
+  return (
+    <View style={styles.container}>
+      {/* Printers option */}
+      <View style={styles.section}>
+        <Text style={styles.title}>Select printer type: </Text>
+        <Picker
+          selectedValue={String(selectedValue)}
+          mode="dropdown"
+          // onValueChange={handleChangePrinterType}
+        >
+          {Object.keys(printerList).map((item, index) => (
+            <Picker.Item
+              label={item.toUpperCase()}
+              value={item}
+              key={`printer-type-item-${index}`}
+            />
+          ))}
+        </Picker>
+      </View>
+      {/* Printers List */}
+      <View style={styles.section}>
+        {selectedValue === 'net' ? _renderNet() : _renderOther()}
+        {/* Buttons Connect */}
+        <View
+          style={[
+            styles.buttonContainer,
+            {
+              marginTop: 50,
+            },
+          ]}>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={handleConnectSelectedPrinter}>
+            {/*<AntIcon name={'disconnect'} color={'white'} size={18} />*/}
+            <Text style={styles.text}>Connect</Text>
+          </TouchableOpacity>
+        </View>
+        {/* Button Print sample */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: 'blue' }]}
+            onPress={handlePrint}>
+            {/*<AntIcon name={'printer'} color={'white'} size={18} />*/}
+            <Text style={styles.text}>Print sample</Text>
+          </TouchableOpacity>
+        </View>
+        {/* Button Print bill */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: 'blue' }]}
+            onPress={handlePrintBill}>
+            {/*<AntIcon name={'profile'} color={'white'} size={18} />*/}
+            <Text style={styles.text}>Print bill</Text>
+          </TouchableOpacity>
+        </View>
+        {/* Button Print bill With Image */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: 'blue' }]}
+            onPress={handlePrintBillWithImage}>
+            {/*<AntIcon name={'profile'} color={'white'} size={18} />*/}
+            <Text style={styles.text}>Print bill With Image</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: 'blue' }]}
+            onPress={printBuild}>
+            {/*<AntIcon name={'profile'} color={'white'} size={18} />*/}
+            <Text style={styles.text}>In thur</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: 'green' }]}
+            onPress={goToSunmi}>
+            <Text style={styles.text}>Go to Sunmi Printer</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.qr}>
+          {/*<QRCode value="hey" getRef={(el: any) => (QrRef = el)} />*/}
+        </View>
+      </View>
+      <Loading loading={loading} />
+    </View>
   );
 };
 
-export default SunmiScreen;
+export default HomeScreen;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: 16,
+    // backgroundColor: 'red',
+  },
+  section: {},
+  rowDirection: {
+    flexDirection: 'row',
+  },
+  buttonContainer: {
+    marginTop: 10,
   },
   button: {
-    marginTop: 50,
-    paddingHorizontal: 50,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: 'steelblue',
+    flexDirection: 'row',
+    height: 40,
+    width: deviceWidth / 1.5,
+    alignSelf: 'center',
+    backgroundColor: 'green',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 5,
   },
-  buttonText: {
+  text: {
     color: 'white',
+    fontSize: 17,
+    fontWeight: 'bold',
+    marginLeft: 5,
+  },
+  title: {
+    color: 'black',
+    fontSize: 15,
+    fontWeight: 'bold',
+    marginLeft: 5,
+  },
+  qr: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
   },
 });
