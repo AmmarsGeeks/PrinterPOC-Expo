@@ -6,10 +6,9 @@ import {
   RN_THERMAL_RECEIPT_PRINTER_EVENTS,
 } from 'react-native-thermal-receipt-printer-image-qr';
 import Loading from './Loading';
-
-import {navigate} from '../../App';
-import HomeContextProvider from 'screens/home/HomeContextProvider.tsx';
-import {useGetListDevices} from 'hooks';
+// import {navigate} from '../../App';
+import HomeContextProvider from '@/context/HomeContextProvider';
+import {useGetListDevices} from '@/hooks';
 
 export interface DeviceType {
   host: string;
@@ -50,7 +49,7 @@ const FindPrinter = () => {
   }, [devices?.length, setDevices, setLoading]);
 
   const onSelectedPrinter = (printer: any) => {
-    navigate('Home', {printer});
+    // navigate('Home', {printer});
   };
 
   if (loading) {

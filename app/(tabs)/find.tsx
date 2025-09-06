@@ -1,3 +1,6 @@
+import Loading from '@/components/Loading';
+import * as useGetListDevices from '@/hooks/useGetListDevices';
+import { useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
@@ -5,9 +8,6 @@ import {
   NetPrinterEventEmitter,
   RN_THERMAL_RECEIPT_PRINTER_EVENTS,
 } from 'react-native-thermal-receipt-printer-image-qr';
-import Loading from '@/components/Loading';
-import { useGetListDevices } from '@/hooks/useGetListDevices';
-import { useRouter } from 'expo-router';
 
 export interface DeviceType {
   host: string;
@@ -18,7 +18,7 @@ export interface DeviceType {
 
 const FindPrinter = () => {
   const router = useRouter();
-  const { setDevices, loading, setLoading, devices } = useGetListDevices();
+  const { setDevices, loading, setLoading, devices } = useGetListDevices.useGetListDevices();
 
   React.useEffect(() => {
     if (devices?.length === 0) {

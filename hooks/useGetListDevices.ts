@@ -113,3 +113,7 @@ const useGetListDevices = () => {
 };
 
 export default useGetListDevices;
+
+export function useGetListDevices(): { setDevices: any; loading: any; setLoading: any; devices: any; } {
+  throw new Error('Function not implemented.');
+}
